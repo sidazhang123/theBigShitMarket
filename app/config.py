@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from app.paths import runtime_root
+from app.paths import cache_file, runtime_root
 
 DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
 
@@ -104,7 +104,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         quote_timeout=quote_timeout,
         crash_windows=windows,
         config_path=config_path,
-        cache_path=config_path.resolve().parent / "cache" / "baselines.json",
+        cache_path=cache_file(),
     )
 
 

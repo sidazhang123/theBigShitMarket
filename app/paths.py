@@ -1,6 +1,7 @@
 """开发目录和打包后的路径。
 
-打包成单文件时，网页资源在解压目录里，配置和缓存放在 exe 旁边，方便改写。
+打包成单文件时，网页和历史缓存打进 exe，启动时由解包目录直接读取。
+可写的 config.yaml 放在 exe 旁边，用来记住主题。
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ def frozen() -> bool:
 def runtime_root() -> Path:
     """输入：无。
     输出：可写的程序目录。
-    用途：放置 config.yaml 和缓存。
+    用途：放置 config.yaml 和浏览器数据。
     边界：打包后是 exe 所在目录，源码运行时是项目根目录。
     """
     if frozen():
@@ -34,8 +35,8 @@ def runtime_root() -> Path:
 def bundle_root() -> Path:
     """输入：无。
     输出：只读资源目录。
-    用途：读取打包进去的网页和默认配置。
-    边界：未打包时与 runtime_root 相同。
+    用途：读取打包进去的网页、默认配置和历史缓存。
+    边界：未打包时与 runtime_root 相同。单文件 exe 里这是启动时的解包目录。
     """
     if frozen():
         return Path(getattr(sys, "_MEIPASS"))
@@ -45,11 +46,20 @@ def bundle_root() -> Path:
 _WINDOWS_BLOCK = re.compile(r"(?m)^crash_windows:\n(?:[ \t]+-[ \t]*\S[^\n]*\n)+")
 
 
+def cache_file() -> Path:
+    """输入：无。
+    输出：历史缓存路径。
+    用途：启动时读取灰色柱和虚线。
+    边界：打包后用解包目录里的那份，不复制到 exe 旁边。源码运行时就是项目里的 cache/baselines.json。
+    """
+    return bundle_root() / "cache" / "baselines.json"
+
+
 def prepare_runtime() -> None:
     """输入：无。
     输出：无。
-    用途：打包运行时把历史缓存和日期段同步到 exe 旁边，并指定浏览器数据目录。
-    边界：源码运行时什么都不做。主题等手改项保留，缓存按发布内容覆盖。
+    用途：打包运行时补齐 exe 旁边的配置，让日期段和包内缓存一致，并指定浏览器数据目录。
+    边界：源码运行时什么都不做。不把历史缓存复制出来。主题等手改项保留。
     """
     if not frozen():
         return
@@ -58,35 +68,10 @@ def prepare_runtime() -> None:
     root = runtime_root()
     bundled = bundle_root()
     os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(root / "webview2")
-    refresh_shipped_data(bundled, root)
+    install_user_config(bundled / "config.yaml", root / "config.yaml")
 
 
-def refresh_shipped_data(bundled: Path, root: Path) -> None:
-    """输入：打包资源目录、exe 旁边的可写目录。
-    输出：无。
-    用途：用这次发布的历史缓存替换旧缓存，并让日期段列表与缓存一致。
-    边界：配置里的主题和其他手改项保留。两边内容相同则不写。
-    """
-    _replace_if_different(bundled / "cache" / "baselines.json", root / "cache" / "baselines.json")
-    _sync_crash_windows(bundled / "config.yaml", root / "config.yaml")
-
-
-def _replace_if_different(source: Path, target: Path) -> None:
-    """输入：发布文件、可写副本。
-    输出：无。
-    用途：缓存更新后，已有的旧副本也换成新内容。
-    边界：源文件不存在或两边字节相同则跳过。
-    """
-    if not source.is_file():
-        return
-    payload = source.read_bytes()
-    if target.is_file() and target.read_bytes() == payload:
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(payload)
-
-
-def _sync_crash_windows(source: Path, target: Path) -> None:
+def install_user_config(source: Path, target: Path) -> None:
     """输入：发布配置、exe 旁边的配置。
     输出：无。
     用途：只替换日期段列表，避免新缓存和旧日期段对不上。

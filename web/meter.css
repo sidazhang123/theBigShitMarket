@@ -122,6 +122,7 @@ button.meter__pill:hover { color: var(--txt-1); }
 .meter__axis { z-index: 1; opacity: .7; pointer-events: none; }
 .meter__front { z-index: 3; pointer-events: none; }
 .js-readouts { z-index: 4; pointer-events: none; }
+.js-chips { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
 .readout {
   position: absolute;
@@ -228,10 +229,23 @@ button.meter__pill:hover { color: var(--txt-1); }
   white-space: nowrap;
   z-index: 5;
   opacity: 1;
-  transition: padding .15s;
+  pointer-events: auto;
+  transition: padding .15s, height .15s, background .15s, color .15s, font-size .15s, box-shadow .15s, border-color .15s;
 }
 
-.chip.is-hot { padding: 0 9px; z-index: 6; opacity: 1; }
+.chip.is-hot {
+  height: 30px;
+  padding: 0 12px;
+  border-style: solid;
+  border-color: var(--chip-hot-bg);
+  background: var(--chip-hot-bg);
+  color: var(--chip-hot-txt);
+  font-size: var(--fs-chip-hot);
+  font-weight: 700;
+  line-height: 28px;
+  z-index: 6;
+  box-shadow: 0 8px 18px rgba(20, 12, 4, .42);
+}
 
 .meter__veil {
   position: absolute;

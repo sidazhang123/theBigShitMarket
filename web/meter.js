@@ -271,6 +271,8 @@ function createMeter(root) {
       chip.dataset.key = item.key;
       chip.textContent = item.label;
       const pos = chipPosition(item);
+      chip.dataset.x = String(pos[0]);
+      chip.dataset.y = String(pos[1]);
       chip.style.left = pos[0] + "px";
       chip.style.top = pos[1] + "px";
       chipsEl.appendChild(chip);
@@ -295,7 +297,33 @@ function createMeter(root) {
       el.textContent = on
         ? `${item.label}　>6% 最大 ${item.peak.toLocaleString("en-US")} 只`
         : item.label;
+      placeChip(el, on);
     });
+  }
+
+  function placeChip(el, hot) {
+    /* 输入：标签元素、是否处于悬停放大。
+       输出：无。就地改 left/top。
+       用途：放大后的长标签仍留在图内。
+       边界：未悬停时回到最初落点。宽高尚未布局时不挪。 */
+    const x0 = Number(el.dataset.x) || 0;
+    const y0 = Number(el.dataset.y) || 0;
+    if (!hot) {
+      el.style.left = x0 + "px";
+      el.style.top = y0 + "px";
+      return;
+    }
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    if (width <= 0 || height <= 0) return;
+    let x = x0;
+    let y = y0 - Math.round((height - 17) / 2);
+    if (x + width > 792) x = 792 - width;
+    if (x < 8) x = 8;
+    if (y + height > 422) y = 422 - height;
+    if (y < 4) y = 4;
+    el.style.left = round(x) + "px";
+    el.style.top = round(y) + "px";
   }
 
   function apply(state) {

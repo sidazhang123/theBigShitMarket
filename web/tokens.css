@@ -44,6 +44,7 @@
   --fs-value: 12px;
   --fs-footer: 9.5px;
   --fs-chip: 9px;
+  --fs-chip-hot: 15px;
 
   /* ---- 动效 ---- */
   --jump-ms: 260ms;
@@ -71,6 +72,8 @@
   --contour: #E8B45A;
   --chip-bg: #16120C;
   --chip-txt: #E8C07A;
+  --chip-hot-bg: #F3C56A;
+  --chip-hot-txt: #1A1206;
 
   --poop-opacity: 0.58;
 
@@ -108,6 +111,8 @@
   --contour: #B0801E;
   --chip-bg: #FFFFFF;
   --chip-txt: #6E4A0C;
+  --chip-hot-bg: #6E4A0C;
+  --chip-hot-txt: #FFF6E4;
 
   --poop-opacity: 0.42;
 

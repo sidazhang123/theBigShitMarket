@@ -1,8 +1,8 @@
 {
-  "fingerprint": "0be657ced1f0b6dcb7873ffc35981bd7a53fd0f4e1bebd4e776fa4df1ded93eb",
-  "generated_at": "2026-10-30T12:05:28",
+  "fingerprint": "9c74cafd04c5e8ed4d8fe16b3aa828977bee29666fb48d77d6b5380eda15155b",
+  "generated_at": "2026-10-30T14:44:42",
   "formula_version": 1,
-  "source_db": "D:\\图形量价选股\\quant.duckdb",
+  "source_db": "",
   "min_codes": 4500,
   "bands": [
     {
@@ -190,6 +190,26 @@
       ],
       "trading_days": 25,
       "covered_days": 0
+    },
+    {
+      "id": "20260320-0324",
+      "label": "26-03",
+      "source": "15m",
+      "worst": [
+        5,
+        6,
+        8,
+        9,
+        12,
+        21,
+        130,
+        353,
+        757,
+        1606,
+        2703
+      ],
+      "trading_days": 3,
+      "covered_days": 3
     }
   ]
 }

@@ -33,7 +33,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["webview.platforms.android"],
+    excludes=["webview.platforms.android", "duckdb", "app.history"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

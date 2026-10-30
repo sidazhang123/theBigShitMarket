@@ -20,7 +20,7 @@ import webview
 
 from app.config import AppConfig, load_config, refresh_label, save_theme
 from app.count import THRESHOLDS
-from app.history import load_cached
+from app.baseline_cache import load_cached
 from app.live import LivePoller
 
 

@@ -7,13 +7,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import date, timedelta
 from typing import Any, Sequence
 
 import duckdb
 
+from app.baseline_cache import fingerprint
 from app.config import AppConfig, parse_window, stamp_now
 from app.count import THRESHOLDS
 
@@ -35,55 +35,6 @@ _SESSION = """
 """
 
 _PAD_DAYS = 30
-
-
-def fingerprint(config: AppConfig) -> str:
-    """输入：配置。
-    输出：十六进制指纹。
-    用途：判断缓存是否仍对应当前日期段、库路径、覆盖阈值和公式版本。
-    边界：半宽、内缩和行情库路径不参与指纹。路径只在主动重算时使用。
-    """
-    payload = {
-        "min_codes": config.min_codes,
-        "formula_version": config.formula_version,
-        "windows": list(config.crash_windows),
-    }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def load_cached(config: AppConfig) -> dict[str, Any] | None:
-    """输入：配置。
-    输出：指纹一致的缓存；没有文件或指纹不同时返回 None。
-    用途：启动时跳过行情库扫描。
-    边界：缓存损坏时返回 None，不抛出。
-    """
-    path = config.cache_path
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if data.get("fingerprint") == fingerprint(config):
-        return data
-    if _cache_matches(data, config):
-        return data
-    return None
-
-
-def _cache_matches(data: dict[str, Any], config: AppConfig) -> bool:
-    """输入：缓存内容和当前配置。
-    输出：家数是否仍对应当前日期段、覆盖阈值和公式版本。
-    用途：行情库路径留空时仍使用已经算好的缓存。
-    边界：缺少各段结果时返回假。
-    """
-    if int(data.get("formula_version", -1)) != int(config.formula_version):
-        return False
-    if int(data.get("min_codes", -1)) != int(config.min_codes):
-        return False
-    ids = [item.get("id") for item in data.get("crashes") or []]
-    return bool(data.get("bands")) and ids == list(config.crash_windows)
 
 
 def recompute_baselines(config: AppConfig) -> dict[str, Any]:

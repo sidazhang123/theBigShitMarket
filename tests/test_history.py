@@ -6,7 +6,8 @@ from pathlib import Path
 import duckdb
 
 from app.config import AppConfig, load_config
-from app.history import load_cached, recompute_baselines
+from app.baseline_cache import load_cached
+from app.history import recompute_baselines
 
 
 def _config(db_path: Path, cache_path: Path, windows: tuple[str, ...], min_codes: int) -> AppConfig:

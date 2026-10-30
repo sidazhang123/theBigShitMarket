@@ -123,6 +123,7 @@ function createMeter(root) {
       <span>基底 · quant.duckdb 15min · 单档历史最大值</span>
       <span>填充 · 标准行情 · 每 2 min 轮询</span>
     </div>
+    <div class="meter__alert js-alert" role="alert"></div>
     <div class="meter__veil" role="status">
       <div class="meter__spin" aria-hidden="true"></div>
       <div class="meter__veilText">数据获取中</div>
@@ -138,6 +139,7 @@ function createMeter(root) {
   const contourSvg = root.querySelector(".js-contours");
   const chipsEl = root.querySelector(".js-chips");
   const chartEl = root.querySelector(".meter__chart");
+  const alertEl = root.querySelector(".js-alert");
   const ns = "http://www.w3.org/2000/svg";
 
   const rowRefs = THRESHOLDS.map((th, i) => {
@@ -338,6 +340,9 @@ function createMeter(root) {
     const waiting = state.universe == null;
     root.classList.toggle("is-waiting", waiting);
     root.classList.toggle("is-stale", Boolean(state.stale) && !waiting);
+    const alertText = String(state.alert || "");
+    root.classList.toggle("is-alert", alertText.length > 0);
+    alertEl.textContent = alertText;
     const bands = Array.isArray(state.bands) ? state.bands : [];
     const shallow = bands.find((band) => Number(band.th) === 6);
     const nextBase = shallow ? Number(shallow.base) || 0 : 0;

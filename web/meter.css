@@ -25,7 +25,11 @@ body[data-theme="light"] { background: #FAF4E8; }
   user-select: none;
 }
 
-.meter.is-stale { opacity: .4; }
+.meter.is-stale .meter__hex,
+.meter.is-stale .meter__header,
+.meter.is-stale .meter__colhead,
+.meter.is-stale .meter__chart,
+.meter.is-stale .meter__footer { opacity: .4; }
 .meter.is-stale .meter__live { color: var(--txt-3); }
 .meter.is-stale .js-livedot-core { fill: var(--txt-3); }
 .meter.is-stale .js-livedot-halo { fill: var(--txt-3); }
@@ -245,6 +249,29 @@ button.meter__pill:hover { color: var(--txt-1); }
   line-height: 28px;
   z-index: 6;
   box-shadow: 0 8px 18px rgba(20, 12, 4, .42);
+}
+
+.meter__alert {
+  display: none;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 30;
+  max-width: 280px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #FFF7F5;
+  font: 600 13px/18px var(--font-cn);
+  pointer-events: none;
+  box-shadow: 0 10px 24px rgba(90, 12, 8, .35);
+  animation: meter-alert-flash .8s step-end infinite;
+}
+
+.meter.is-alert .meter__alert { display: block; }
+
+@keyframes meter-alert-flash {
+  0%, 49% { background: #7F1D1D; }
+  50%, 100% { background: #DC2626; }
 }
 
 .meter__veil {

@@ -21,7 +21,7 @@ import webview
 from app.config import AppConfig, load_config, refresh_label, save_theme
 from app.count import THRESHOLDS
 from app.baseline_cache import load_cached
-from app.live import LivePoller
+from app.live import LivePoller, describe_quote_error
 
 
 class MeterApp:
@@ -136,6 +136,7 @@ class MeterApp:
             self._state["universe"] = int(universe)
             self._state["clock"] = when.strftime("%H:%M:%S")
             self._state["stale"] = False
+            self._state["alert"] = ""
             self._state["message"] = ""
             self._saw_quote = True
             self._bump()
@@ -144,12 +145,13 @@ class MeterApp:
     def _on_quote_error(self, exc: Exception) -> None:
         """输入：行情异常。
         输出：无。
-        用途：保留上一帧家数，并把面板标成中断。
-        边界：从未成功取过数时，文案是「行情中断」。
+        用途：保留上一帧家数，并在窗口右上角亮出红窗。
+        边界：从未成功取过数时，副标题仍是「行情中断」。下一轮成功会清掉红窗。
         """
         print(f"行情中断: {exc}")
         with self._lock:
             self._state["stale"] = True
+            self._state["alert"] = describe_quote_error(exc)
             if not self._saw_quote:
                 self._state["message"] = "行情中断"
             self._bump()
@@ -279,6 +281,7 @@ def _initial_state(config: AppConfig, cached: dict[str, Any] | None) -> dict[str
         "theme": config.theme,
         "computing": False,
         "stale": False,
+        "alert": "",
         "clock": "",
         "universe": None,
         "message": "同步中",

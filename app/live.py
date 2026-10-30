@@ -6,12 +6,69 @@
 
 from __future__ import annotations
 
+import socket
+import struct
 import threading
+import zlib
 from datetime import datetime
 from typing import Callable
 
 from app.count import summarize_pct
 from app.quote_client import fetch_change_pcts
+
+
+def describe_quote_error(exc: BaseException) -> str:
+    """输入：一轮行情抛出的异常。
+    输出：给右上角红窗的一行说明。
+    用途：把连接失败、拿到数据后的解析失败和其它故障分成三句。
+    边界：原文超过 72 字时截断。空异常信息只留类别。
+    """
+    detail = " ".join(str(exc).split())
+    if len(detail) > 72:
+        detail = detail[:71] + "…"
+    if _is_connect_error(exc):
+        title = "网络连接失败"
+    elif _is_parse_error(exc):
+        title = "数据解析错误"
+    else:
+        title = "其它错误"
+    if not detail:
+        return title
+    return f"{title}：{detail}"
+
+
+def _is_connect_error(exc: BaseException) -> bool:
+    """输入：异常。
+    输出：是否属于连不上行情服务器。
+    用途：红窗使用「网络连接失败」。
+    边界：只看异常类型和文案，不再次连接。
+    """
+    if isinstance(exc, (TimeoutError, ConnectionError, socket.gaierror)):
+        return True
+    text = str(exc).lower()
+    marks = (
+        "连接失败",
+        "连接已断开",
+        "timed out",
+        "timeout",
+        "connection refused",
+        "connection reset",
+        "network is unreachable",
+    )
+    return any(mark in text for mark in marks)
+
+
+def _is_parse_error(exc: BaseException) -> bool:
+    """输入：异常。
+    输出：是否属于已经拿到字节但解不开。
+    用途：红窗使用「数据解析错误」。
+    边界：连接类异常即使文案里带分页字样，也不算解析错误。
+    """
+    if isinstance(exc, (zlib.error, struct.error, UnicodeError)):
+        return True
+    text = str(exc)
+    marks = ("解析", "解压", "压缩", "正文", "条数不符", "满页条数", "缺少行情页")
+    return any(mark in text for mark in marks)
 
 
 def fetch_quote_snapshot(host: str, port: int, timeout: float) -> tuple[list[int], int]:

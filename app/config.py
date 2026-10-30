@@ -12,8 +12,9 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = ROOT / "config.yaml"
+from app.paths import runtime_root
+
+DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
 
 _THEME_LINE = re.compile(r"(?m)^theme:\s*\S+\s*$")
 

@@ -12,9 +12,13 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from app.paths import bundle_root, prepare_runtime
+
+prepare_runtime()
+
 import webview
 
-from app.config import ROOT, AppConfig, load_config, refresh_label, save_theme
+from app.config import AppConfig, load_config, refresh_label, save_theme
 from app.count import THRESHOLDS
 from app.history import load_cached
 from app.live import LivePoller
@@ -211,7 +215,7 @@ def main() -> int:
     """
     config = load_config()
     app = MeterApp(config)
-    html = ROOT / "web" / "index.html"
+    html = bundle_root() / "web" / "index.html"
     window = webview.create_window(
         "狗屎市场",
         html.as_uri(),

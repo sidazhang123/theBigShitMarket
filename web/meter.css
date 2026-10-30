@@ -1,0 +1,285 @@
+/* 计量器组件。几何和色板来自 tokens.css，不在这里另写一套颜色。 */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 880px;
+  height: 640px;
+  overflow: hidden;
+  background: #0E0C09;
+}
+
+body[data-theme="light"] { background: #FAF4E8; }
+
+.meter {
+  position: relative;
+  width: var(--panel-w);
+  height: var(--panel-h);
+  border-radius: var(--panel-r);
+  overflow: hidden;
+  border: 1px solid var(--panel-line);
+  background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2));
+  box-shadow: 0 28px 70px -14px rgba(38, 28, 10, .34), 0 6px 20px rgba(38, 28, 10, .10);
+  font-family: var(--font-cn);
+  user-select: none;
+}
+
+.meter.is-stale { opacity: .4; }
+.meter.is-stale .meter__live { color: var(--txt-3); }
+.meter.is-stale .js-livedot-core { fill: var(--txt-3); }
+.meter.is-stale .js-livedot-halo { fill: var(--txt-3); }
+
+.meter__hex { position: absolute; inset: 0; pointer-events: none; }
+
+.meter__header {
+  position: absolute;
+  left: 40px;
+  top: 40px;
+  width: 800px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meter__overline {
+  font: 500 var(--fs-overline)/14px var(--font-mono);
+  letter-spacing: 1.5px;
+  color: var(--txt-3);
+}
+
+.meter__titleRow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.meter__title { font: 600 var(--fs-panel-title)/26px var(--font-cn); color: var(--txt-1); }
+.meter__meta { font: 400 var(--fs-meta)/16px var(--font-cn); color: var(--txt-2); margin-top: 4px; }
+.meter__right { display: flex; align-items: center; gap: 8px; height: 22px; }
+.meter__live { font: 500 9px/14px var(--font-mono); letter-spacing: 1.6px; color: var(--d06); }
+.meter__clock { font: 500 13px/18px var(--font-mono); color: var(--txt-1); opacity: .86; }
+
+.meter__pill {
+  min-width: 74px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  font: 400 9.5px/14px var(--font-cn);
+  color: var(--txt-2);
+  border: 1px solid var(--panel-line);
+  background: var(--panel-bg-1);
+  padding: 0 8px;
+}
+
+button.meter__pill {
+  min-width: 46px;
+  cursor: pointer;
+  font: 400 9.5px/14px var(--font-cn);
+}
+
+button.meter__pill:hover { color: var(--txt-1); }
+
+.meter__colhead {
+  position: absolute;
+  left: 40px;
+  top: 118px;
+  width: 800px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 500 9px/14px var(--font-cn);
+  letter-spacing: 1px;
+  color: var(--txt-3);
+}
+
+.meter__colhead span:first-child { width: 92px; text-align: right; }
+.meter__colhead span:last-child { width: 98px; text-align: right; }
+
+.meter__chart { position: absolute; left: 40px; top: var(--chart-top); width: 800px; height: 430px; }
+
+.meter__poop {
+  position: absolute;
+  left: 114px;
+  top: 0;
+  width: 572px;
+  height: 430px;
+  opacity: var(--poop-opacity);
+  pointer-events: none;
+  z-index: 0;
+  transform: scale(1.3);
+  transform-origin: center center;
+  transition: opacity var(--hover-out-ms) ease-out;
+}
+
+.meter__axis,
+.meter__front,
+.js-readouts {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.meter__axis { z-index: 1; opacity: .7; pointer-events: none; }
+.meter__front { z-index: 3; pointer-events: none; }
+.js-readouts { z-index: 4; pointer-events: none; }
+
+.readout {
+  position: absolute;
+  left: 0;
+  width: 800px;
+  height: var(--row-h);
+}
+
+.row { position: absolute; left: 0; width: 800px; height: var(--row-h); z-index: 1; overflow: visible; }
+
+.row__base {
+  position: absolute;
+  top: 0;
+  height: var(--row-h);
+  border-radius: var(--row-r);
+  background: var(--bar-base);
+  border: 1px solid var(--bar-seam);
+  box-shadow: inset 0 1px 0 var(--bar-gloss);
+  z-index: 0;
+  opacity: .7;
+}
+
+.row__fill {
+  position: absolute;
+  top: var(--fill-inset);
+  height: var(--fill-h);
+  border-radius: var(--fill-r);
+  background: var(--c, #888);
+  box-shadow: inset 0 2px 3px var(--fill-gloss);
+  will-change: left, width;
+  z-index: 1;
+  opacity: .7;
+}
+
+.row__label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--label-w);
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font: 500 var(--fs-label)/1 var(--font-num);
+  color: var(--label);
+  z-index: 3;
+}
+
+.row__value {
+  position: absolute;
+  left: 702px;
+  top: 0;
+  width: var(--value-w);
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font: 600 var(--fs-value)/1 var(--font-num);
+  color: var(--v, #888);
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+}
+
+.contour {
+  fill: none;
+  stroke: var(--contour);
+  stroke-linejoin: round;
+  pointer-events: none;
+  opacity: .7;
+  transition: opacity .2s, stroke-width .2s;
+}
+
+.contour--hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 26;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.contour.is-hot {
+  stroke-width: 2.6 !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 6px var(--contour));
+}
+
+.meter__chart[data-hover] .contour:not(.is-hot) { opacity: .12 !important; }
+
+.chip {
+  position: absolute;
+  width: auto;
+  min-width: 50px;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px dashed currentColor;
+  background: var(--chip-bg);
+  color: var(--chip-txt);
+  font: 500 var(--fs-chip)/15px var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  white-space: nowrap;
+  z-index: 5;
+  opacity: 1;
+  transition: padding .15s;
+}
+
+.chip.is-hot { padding: 0 9px; z-index: 6; opacity: 1; }
+
+.meter__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(72, 72, 72, .72);
+  color: #F4F4F4;
+}
+
+.meter.is-waiting .meter__veil { display: flex; }
+
+.meter__spin {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid rgba(244, 244, 244, .35);
+  border-top-color: #F4F4F4;
+  animation: meter-spin .8s linear infinite;
+}
+
+.meter__veilText {
+  font: 500 15px/1.4 var(--font-cn);
+  letter-spacing: .12em;
+}
+
+@keyframes meter-spin {
+  to { transform: rotate(360deg); }
+}
+
+.meter__footer {
+  position: absolute;
+  left: 40px;
+  top: 592px;
+  width: 800px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 400 var(--fs-footer)/14px var(--font-cn);
+  color: var(--txt-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row__fill { transition: none; }
+  .meter__spin { animation: none; }
+}

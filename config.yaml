@@ -1,0 +1,24 @@
+# 极端监控的可调参数。改日期段后调用 recompute_baselines，或重新启动。
+
+# 只在调用 recompute_baselines 时读取。启动不检查、不连接。
+source_db: ""
+refresh_seconds: 120
+min_codes: 4500
+half_width_px: 300
+contour_inset: 0.9
+formula_version: 1
+theme: dark
+
+
+quote_host: "114.117.72.207"
+quote_port: 7709
+quote_timeout: 8
+
+crash_windows:
+  - "20260717-0730"
+  - "20250103-0113"
+  - "20250401-0409"
+  - "20220307-0315"
+  - "20220421-0427"
+  - "20240122-0205"
+  - "20240816-20240923"

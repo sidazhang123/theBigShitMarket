@@ -1,0 +1,127 @@
+/* ==========================================================================
+   The Big Shit Market — design tokens
+   所有可施工数值的唯一来源。改这里，index.html 里的原型会跟着变。
+   ========================================================================== */
+
+:root {
+  /* ---- 几何 ---- */
+  --panel-w: 880px;
+  --panel-h: 640px;
+  --panel-r: 26px;
+  --panel-pad: 40px;
+
+  --chart-w: 800px;
+  --chart-h: 430px;
+  --chart-top: 148px;      /* chart 在面板内的 y */
+  --axis-x: 400px;         /* 中轴（chart 局部坐标） */
+
+  --row-h: 34px;           /* 柱高（11 根紧贴，无间隙） */
+  --row-pitch: 34px;       /* = row-h，贴在一起 */
+  --row-r: 6px;            /* 柱圆角：小圆角，不是胶囊 */
+  --row-top0: 28px;        /* 第 1 根柱的 y */
+
+  --fill-h: 30px;          /* 彩柱高（上下各留 2px 灰圈） */
+  --fill-r: 4px;
+  --fill-inset: 2px;
+
+  --label-w: 92px;         /* 左侧档位列 */
+  --value-w: 98px;         /* 右侧家数列 */
+
+  /* ---- 比例尺 ----
+     300px 半宽 = 3380 只  →  0.088757 px/只
+     即：柱宽(px) = 家数 × SCALE，柱左边缘 = 400 - 柱宽/2（居中） */
+  --px-per-stock: 0.088757;
+
+  /* ---- 排版 ---- */
+  --font-cn: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-num: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  --fs-panel-title: 20px;
+  --fs-overline: 9.5px;
+  --fs-meta: 10.5px;
+  --fs-label: 11px;
+  --fs-value: 12px;
+  --fs-footer: 9.5px;
+  --fs-chip: 9px;
+
+  /* ---- 动效 ---- */
+  --jump-ms: 260ms;
+  --jump-overshoot-ms: 120ms;   /* 过冲达峰时刻 */
+  --overshoot-px: 6px;          /* ≈ 68 只 */
+  --ease-jump: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --hover-out-ms: 300ms;
+}
+
+/* ==========================  深色（默认）  ========================== */
+[data-theme="dark"] {
+  --panel-bg-1: #1D1811;
+  --panel-bg-2: #0E0C09;
+  --panel-line: #2A2418;
+
+  --bar-base: #3A352C;
+  --bar-seam: #221D15;        /* 柱间 1px 缝：必须比面板亮，否则读成"断开" */
+  --axis: #4A4234;
+
+  --txt-1: #F3ECE0;
+  --txt-2: #8A8070;
+  --txt-3: #6E6555;
+  --label: #8B8271;
+
+  --contour: #E8B45A;
+  --chip-bg: #16120C;
+  --chip-txt: #E8C07A;
+
+  --poop-opacity: 0.58;
+
+  /* 11 阶跌幅色：6% 绿 → 16% 深红（色相 165° → 8°，S 递增） */
+  --d06: #2FC08C;  --d07: #4FC968;  --d08: #7ED04E;
+  --d09: #A8D148;  --d10: #CAD04A;  --d11: #E5C348;
+  --d12: #EDAA3C;  --d13: #EE8F35;  --d14: #E8762F;
+  --d15: #DC5A2C;  --d16: #C63A26;
+
+  /* 数值文字用同色相的提亮版（深底上要够对比） */
+  --v06: #5FD9A2;  --v07: #6EDC85;  --v08: #96E06A;
+  --v09: #BCE264;  --v10: #DAE066;  --v11: #EFD566;
+  --v12: #F5C05A;  --v13: #F5A955;  --v14: #F0924E;
+  --v15: #EC7A4C;  --v16: #DE5C46;
+
+  --fill-gloss: rgba(255, 255, 255, 0.22);
+  --bar-gloss: rgba(255, 255, 255, 0.05);
+}
+
+/* ==========================  浅色主题  ========================== */
+[data-theme="light"] {
+  --panel-bg-1: #FFFDF8;
+  --panel-bg-2: #FAF4E8;
+  --panel-line: #E5DAC4;
+
+  --bar-base: #E9E2D1;
+  --bar-seam: #D5C9AE;
+  --axis: #C9BCA0;
+
+  --txt-1: #221C12;
+  --txt-2: #857A66;
+  --txt-3: #A2937A;
+  --label: #8A8070;
+
+  --contour: #B0801E;
+  --chip-bg: #FFFFFF;
+  --chip-txt: #6E4A0C;
+
+  --poop-opacity: 0.42;
+
+  /* 同一套色相，整体加深一档（保证浅底 AA） */
+  --d06: #16996C;  --d07: #2FA24A;  --d08: #5EA834;
+  --d09: #85A82B;  --d10: #A6A627;  --d11: #BE9E22;
+  --d12: #C48520;  --d13: #C46C1C;  --d14: #BD551A;
+  --d15: #AE3F19;  --d16: #942718;
+
+  --v06: #16996C;  --v07: #2FA24A;  --v08: #5EA834;
+  --v09: #85A82B;  --v10: #A6A627;  --v11: #BE9E22;
+  --v12: #C48520;  --v13: #C46C1C;  --v14: #BD551A;
+  --v15: #AE3F19;  --v16: #942718;
+
+  --fill-gloss: rgba(255, 255, 255, 0.30);
+  --bar-gloss: rgba(0, 0, 0, 0.05);
+}

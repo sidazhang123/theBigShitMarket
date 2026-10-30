@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -41,11 +42,14 @@ def bundle_root() -> Path:
     return runtime_root()
 
 
+_WINDOWS_BLOCK = re.compile(r"(?m)^crash_windows:\n(?:[ \t]+-[ \t]*\S[^\n]*\n)+")
+
+
 def prepare_runtime() -> None:
     """输入：无。
     输出：无。
-    用途：打包运行时把缺的配置和历史缓存复制到 exe 旁边，并指定浏览器数据目录。
-    边界：源码运行时什么都不做。已有文件不覆盖。
+    用途：打包运行时把历史缓存和日期段同步到 exe 旁边，并指定浏览器数据目录。
+    边界：源码运行时什么都不做。主题等手改项保留，缓存按发布内容覆盖。
     """
     if not frozen():
         return
@@ -54,17 +58,53 @@ def prepare_runtime() -> None:
     root = runtime_root()
     bundled = bundle_root()
     os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(root / "webview2")
-    _copy_if_missing(bundled / "config.yaml", root / "config.yaml")
-    _copy_if_missing(bundled / "cache" / "baselines.json", root / "cache" / "baselines.json")
+    refresh_shipped_data(bundled, root)
 
 
-def _copy_if_missing(source: Path, target: Path) -> None:
-    """输入：打包内的源文件、exe 旁边的目标文件。
+def refresh_shipped_data(bundled: Path, root: Path) -> None:
+    """输入：打包资源目录、exe 旁边的可写目录。
     输出：无。
-    用途：首次运行补齐可写文件。
-    边界：源文件不存在或目标已存在时跳过。
+    用途：用这次发布的历史缓存替换旧缓存，并让日期段列表与缓存一致。
+    边界：配置里的主题和其他手改项保留。两边内容相同则不写。
     """
-    if target.exists() or not source.is_file():
+    _replace_if_different(bundled / "cache" / "baselines.json", root / "cache" / "baselines.json")
+    _sync_crash_windows(bundled / "config.yaml", root / "config.yaml")
+
+
+def _replace_if_different(source: Path, target: Path) -> None:
+    """输入：发布文件、可写副本。
+    输出：无。
+    用途：缓存更新后，已有的旧副本也换成新内容。
+    边界：源文件不存在或两边字节相同则跳过。
+    """
+    if not source.is_file():
+        return
+    payload = source.read_bytes()
+    if target.is_file() and target.read_bytes() == payload:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, target)
+    target.write_bytes(payload)
+
+
+def _sync_crash_windows(source: Path, target: Path) -> None:
+    """输入：发布配置、exe 旁边的配置。
+    输出：无。
+    用途：只替换日期段列表，避免新缓存和旧日期段对不上。
+    边界：目标不存在时整文件复制。找不到日期段块时不改。
+    """
+    if not source.is_file():
+        return
+    bundled = source.read_text(encoding="utf-8")
+    block = _WINDOWS_BLOCK.search(bundled)
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return
+    if block is None:
+        return
+    local = target.read_text(encoding="utf-8")
+    if _WINDOWS_BLOCK.search(local) is None:
+        return
+    updated = _WINDOWS_BLOCK.sub(block.group(0), local, count=1)
+    if updated != local:
+        target.write_text(updated, encoding="utf-8")

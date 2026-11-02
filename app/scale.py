@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 
 def half_px(count: float, base_shallow: float, half_width: float, inset: float = 1.0) -> int:
     """输入：家数、>6% 基底家数、半宽像素、内缩系数。
@@ -15,4 +17,4 @@ def half_px(count: float, base_shallow: float, half_width: float, inset: float =
     """
     if base_shallow <= 0 or count <= 0 or half_width <= 0 or inset <= 0:
         return 0
-    return int(round(float(count) * float(inset) * float(half_width) / float(base_shallow)))
+    return math.floor(float(count) * float(inset) * float(half_width) / float(base_shallow) + 0.5)

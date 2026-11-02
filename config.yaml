@@ -1,7 +1,7 @@
-# 极端监控的可调参数。改日期段后调用 recompute_baselines，或重新启动。
+# 极端监控的可调参数。改日期段后调用 recompute_baselines 重新生成历史缓存。
 
 # 只在调用 recompute_baselines 时读取。启动不检查、不连接。
-source_db: ""
+source_db: 'D:\图形量价选股\quant.duckdb'
 refresh_seconds: 120
 min_codes: 4500
 half_width_px: 300
@@ -10,15 +10,28 @@ formula_version: 1
 theme: dark
 
 
-quote_host: "114.117.72.207"
-quote_port: 7709
+# 每轮按顺序尝试，单台失败后切换下一台；均为支持深沪北的标准行情。
+quote_hosts:
+  - host: "114.117.72.207"
+    port: 7709
+  - host: "123.125.108.101"
+    port: 7709
+  - host: "114.141.177.118"
+    port: 7709
+  - host: "114.141.177.40"
+    port: 7709
 quote_timeout: 8
+# 每台服务器的整次取数截止时间；到期关闭连接并切换下一台。
+quote_deadline_seconds: 30
+# 按过滤前的唯一股票数校验完整性，不受零成交量剔除影响。
+quote_min_stocks: 4500
+quote_min_coverage: 0.9
 
 crash_windows:
   - "20260717-0730"
   - "20250103-0113"
   - "20250401-0409"
-  - "20220307-0315"
+  - "20220927-1014"
   - "20220421-0427"
   - "20240122-0205"
   - "20240816-20240923"

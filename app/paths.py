@@ -1,15 +1,17 @@
 """开发目录和打包后的路径。
 
 打包成单文件时，网页和历史缓存打进 exe，启动时由解包目录直接读取。
-可写的 config.yaml 放在 exe 旁边，用来记住主题。
+可写的 config.yaml 放在 exe 旁边，用来记住主题、刷新周期和行情地址顺序。
 """
 
 from __future__ import annotations
 
-import re
-import shutil
 import sys
 from pathlib import Path
+
+import yaml
+
+from app.storage import atomic_update_text
 
 
 def frozen() -> bool:
@@ -43,9 +45,6 @@ def bundle_root() -> Path:
     return runtime_root()
 
 
-_WINDOWS_BLOCK = re.compile(r"(?m)^crash_windows:\n(?:[ \t]+-[ \t]*\S[^\n]*\n)+")
-
-
 def cache_file() -> Path:
     """输入：无。
     输出：历史缓存路径。
@@ -74,22 +73,79 @@ def prepare_runtime() -> None:
 def install_user_config(source: Path, target: Path) -> None:
     """输入：发布配置、exe 旁边的配置。
     输出：无。
-    用途：只替换日期段列表，避免新缓存和旧日期段对不上。
-    边界：目标不存在时整文件复制。找不到日期段块时不改。
+    用途：日期段与包内缓存对齐，并将单行情地址转换为有序地址列表。
+    边界：目标不存在时整文件复制。已有地址列表、主题和刷新周期保留。
     """
     if not source.is_file():
         return
     bundled = source.read_text(encoding="utf-8")
-    block = _WINDOWS_BLOCK.search(bundled)
-    if not target.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        return
-    if block is None:
-        return
-    local = target.read_text(encoding="utf-8")
-    if _WINDOWS_BLOCK.search(local) is None:
-        return
-    updated = _WINDOWS_BLOCK.sub(block.group(0), local, count=1)
-    if updated != local:
-        target.write_text(updated, encoding="utf-8")
+    defaults = yaml.safe_load(bundled)
+    if not isinstance(defaults, dict):
+        raise ValueError("发布配置顶层必须为映射")
+
+    def transform(local: str) -> str:
+        """输入：锁内用户配置；输出：日期对齐后的配置；边界：缺文件复制完整发布文本。"""
+        if not local:
+            return bundled
+        settings = yaml.safe_load(local)
+        if not isinstance(settings, dict):
+            raise ValueError("用户配置顶层必须为映射")
+        updates = {}
+        if "crash_windows" in defaults:
+            updates["crash_windows"] = defaults["crash_windows"]
+        if "quote_hosts" not in settings and defaults.get("quote_hosts"):
+            hosts = []
+            if settings.get("quote_host"):
+                hosts.append({"host": str(settings["quote_host"]), "port": int(settings.get("quote_port", 7709))})
+            for item in defaults["quote_hosts"]:
+                if item not in hosts:
+                    hosts.append(item)
+            updates["quote_hosts"] = hosts
+        for key in ("quote_deadline_seconds", "quote_min_stocks", "quote_min_coverage"):
+            if key not in settings and key in defaults:
+                updates[key] = defaults[key]
+        return _edit_top_level(local, updates, ("quote_host", "quote_port") if "quote_hosts" in settings or "quote_hosts" in updates else ())
+
+    atomic_update_text(target, transform)
+
+
+def _edit_top_level(text: str, updates: dict, remove: tuple[str, ...]) -> str:
+    """输入：YAML 文本、替换值和删除键；输出：完整新文本。
+    用途：按根映射节点范围更新，支持注释、空行、行内列表和无末尾换行。
+    边界：已有非目标节点原样保留；重复键拒绝；不在此处校验业务参数。
+    """
+    node = yaml.compose(text)
+    if not isinstance(node, yaml.MappingNode):
+        raise ValueError("配置顶层必须为映射")
+    if node.flow_style:
+        mapping = yaml.safe_load(text)
+        if len(mapping) != len(node.value):
+            raise ValueError("配置包含重复键")
+        for key in remove:
+            mapping.pop(key, None)
+        mapping.update(updates)
+        return yaml.safe_dump(mapping, allow_unicode=True, sort_keys=False)
+    seen = set()
+    edits = []
+    for index, (key_node, value_node) in enumerate(node.value):
+        key = key_node.value
+        if key in seen:
+            raise ValueError(f"配置包含重复键：{key}")
+        seen.add(key)
+        if key not in updates and key not in remove:
+            continue
+        start = key_node.start_mark.index
+        end = node.value[index + 1][0].start_mark.index if index + 1 < len(node.value) else len(text)
+        if key in remove:
+            # 删除单行标量时保留后续独立注释，不把它们当成被删除字段的一部分。
+            value_end = max(start, value_node.end_mark.index)
+            newline = text.find("\n", value_end)
+            end = min(end, newline + 1 if newline >= 0 else len(text))
+        replacement = yaml.safe_dump({key: updates[key]}, allow_unicode=True, sort_keys=False) if key in updates else ""
+        edits.append((start, end, replacement))
+    for start, end, replacement in reversed(edits):
+        text = text[:start] + replacement + text[end:]
+    missing = {key: value for key, value in updates.items() if key not in seen}
+    if missing:
+        text = text.rstrip("\n") + "\n" + yaml.safe_dump(missing, allow_unicode=True, sort_keys=False)
+    return text

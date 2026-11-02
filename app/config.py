@@ -5,18 +5,28 @@
 
 from __future__ import annotations
 
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
 import yaml
 
 from app.paths import cache_file, runtime_root
+from app.storage import atomic_update_text
 
 DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
 
-_THEME_LINE = re.compile(r"(?m)^theme:\s*\S+\s*$")
+REFRESH_CHOICES = (60, 120, 180, 240, 300)
+
+
+@dataclass(frozen=True)
+class QuoteHost:
+    """标准行情端点。列表顺序就是每轮故障切换的优先顺序。"""
+
+    host: str
+    port: int
 
 
 @dataclass(frozen=True)
@@ -30,12 +40,47 @@ class AppConfig:
     contour_inset: float
     formula_version: int
     theme: str
-    quote_host: str
-    quote_port: int
+    quote_hosts: tuple[QuoteHost, ...]
     quote_timeout: float
     crash_windows: tuple[str, ...]
     config_path: Path
     cache_path: Path
+    quote_deadline_seconds: float = 30.0
+    quote_min_stocks: int = 4500
+    quote_min_coverage: float = 0.9
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """拒绝重复键的安全 YAML 加载器，避免保存与读取取到不同设置。"""
+
+    def construct_mapping(self, node, deep=False):
+        """输入：映射节点；输出：字典；用途：验证键唯一；边界：复杂或重复键明确报错。"""
+        keys = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str) or key in keys:
+                raise ValueError(f"配置键必须是唯一字符串：{key!r}")
+            keys.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
+def _positive_int(data: dict, key: str, default: int) -> int:
+    """输入：配置映射、键和缺省值；输出：正整数；边界：布尔值和非整数拒绝。"""
+    value = data.get(key, default)
+    if type(value) is not int or value < 1:
+        raise ValueError(f"{key} 必须是正整数")
+    return value
+
+
+def _positive_float(data: dict, key: str, default: float, maximum: float | None = None) -> float:
+    """输入：配置、键、缺省值和可选上限；输出：有限正数；边界：布尔值、非数值和越界拒绝。"""
+    raw = data.get(key, default)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ValueError(f"{key} 必须是有限正数")
+    value = float(raw)
+    if not math.isfinite(value) or value <= 0 or (maximum is not None and value > maximum):
+        raise ValueError(f"{key} 必须是有限正数" + (f"且不大于 {maximum}" if maximum else ""))
+    return value
 
 
 def parse_window(text: str) -> tuple[date, date]:
@@ -72,70 +117,124 @@ def load_config(path: Path | None = None) -> AppConfig:
     边界：缺少日期段、主题不是 dark/light、刷新秒数或覆盖阈值小于 1 时抛出 ValueError。行情库路径可空，启动不检查、不打开。
     """
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
-    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    windows = tuple(str(item).strip() for item in data.get("crash_windows") or ())
-    if not windows:
-        raise ValueError("config.yaml 的 crash_windows 不能为空")
+    data = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
+    if not isinstance(data, dict):
+        raise ValueError("config.yaml 顶层必须是配置映射")
+    raw_windows = data.get("crash_windows")
+    if not isinstance(raw_windows, list) or not raw_windows or not all(isinstance(item, str) for item in raw_windows):
+        raise ValueError("config.yaml 的 crash_windows 必须是非空日期段列表")
+    windows = tuple(item.strip() for item in raw_windows)
+    parsed = set()
     for item in windows:
-        parse_window(item)
+        period = parse_window(item)
+        if period in parsed:
+            raise ValueError(f"crash_windows 包含重复日期段：{item}")
+        parsed.add(period)
     theme = str(data.get("theme") or "dark").strip().lower()
     if theme not in {"dark", "light"}:
         raise ValueError("theme 只能是 dark 或 light")
-    refresh_seconds = int(data.get("refresh_seconds", 120))
-    min_codes = int(data.get("min_codes", 4500))
-    if refresh_seconds < 1 or min_codes < 1:
-        raise ValueError("refresh_seconds 和 min_codes 必须大于 0")
+    refresh_seconds = _positive_int(data, "refresh_seconds", 120)
+    min_codes = _positive_int(data, "min_codes", 4500)
     source_db = str(data.get("source_db") or "").strip()
-    quote_host = str(data.get("quote_host") or "").strip()
-    quote_port = int(data.get("quote_port", 7709))
-    quote_timeout = float(data.get("quote_timeout", 8))
-    if not quote_host or quote_port < 1 or quote_timeout <= 0:
-        raise ValueError("quote_host、quote_port、quote_timeout 必须有效")
+    quote_hosts = _parse_quote_hosts(data.get("quote_hosts"))
+    quote_timeout = _positive_float(data, "quote_timeout", 8)
     return AppConfig(
         source_db=source_db,
         refresh_seconds=refresh_seconds,
         min_codes=min_codes,
-        half_width_px=float(data.get("half_width_px", 300)),
-        contour_inset=float(data.get("contour_inset", 0.9)),
-        formula_version=int(data.get("formula_version", 1)),
+        half_width_px=_positive_float(data, "half_width_px", 300),
+        contour_inset=_positive_float(data, "contour_inset", 0.9, 1),
+        formula_version=_positive_int(data, "formula_version", 1),
         theme=theme,
-        quote_host=quote_host,
-        quote_port=quote_port,
+        quote_hosts=quote_hosts,
         quote_timeout=quote_timeout,
         crash_windows=windows,
         config_path=config_path,
         cache_path=cache_file(),
+        quote_deadline_seconds=_positive_float(data, "quote_deadline_seconds", 30),
+        quote_min_stocks=_positive_int(data, "quote_min_stocks", 4500),
+        quote_min_coverage=_positive_float(data, "quote_min_coverage", 0.9, 1),
     )
+
+
+def _parse_quote_hosts(raw: object) -> tuple[QuoteHost, ...]:
+    """输入：quote_hosts 配置值；输出：有序且去重的标准行情端点。
+    用途：校验故障切换列表，避免运行时才发现空地址或非法端口。
+    边界：必须为非空列表，每项含非空 host；port 缺省 7709，必须是 1～65535 的整数。
+    """
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("quote_hosts 必须是非空列表，每项包含 host 和 port")
+    hosts: list[QuoteHost] = []
+    seen: set[QuoteHost] = set()
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"quote_hosts 第 {index} 项必须包含 host 和 port")
+        host = item.get("host")
+        port = item.get("port", 7709)
+        if not isinstance(host, str) or not host.strip() or any(char.isspace() for char in host.strip()):
+            raise ValueError(f"quote_hosts 第 {index} 项 host 必须是非空地址")
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ValueError(f"quote_hosts 第 {index} 项 port 必须是 1～65535 的整数")
+        endpoint = QuoteHost(host.strip(), port)
+        if endpoint not in seen:
+            seen.add(endpoint)
+            hosts.append(endpoint)
+    return tuple(hosts)
 
 
 def save_theme(config: AppConfig, theme: str) -> AppConfig:
     """输入：当前配置，以及 dark 或 light。
     输出：主题已替换的新配置对象。
     用途：顶栏按钮切换主题后写回 config.yaml 的 theme 行。
-    边界：主题取值非法，或文件里没有单独的 theme 行时抛出 ValueError，不改文件。
+    边界：非法主题抛出 ValueError；配置缺少 theme 时补齐，不改其它配置。
     """
     if theme not in {"dark", "light"}:
         raise ValueError("theme 只能是 dark 或 light")
-    text = config.config_path.read_text(encoding="utf-8")
-    updated, count = _THEME_LINE.subn(f"theme: {theme}", text, count=1)
-    if count != 1:
-        raise ValueError("config.yaml 里没有可替换的 theme 行")
-    config.config_path.write_text(updated, encoding="utf-8", newline="\n")
-    return AppConfig(
-        source_db=config.source_db,
-        refresh_seconds=config.refresh_seconds,
-        min_codes=config.min_codes,
-        half_width_px=config.half_width_px,
-        contour_inset=config.contour_inset,
-        formula_version=config.formula_version,
-        theme=theme,
-        quote_host=config.quote_host,
-        quote_port=config.quote_port,
-        quote_timeout=config.quote_timeout,
-        crash_windows=config.crash_windows,
-        config_path=config.config_path,
-        cache_path=config.cache_path,
-    )
+    _save_setting(config.config_path, "theme", theme)
+    return replace(config, theme=theme)
+
+
+def save_refresh_seconds(config: AppConfig, seconds: int) -> AppConfig:
+    """输入：当前配置和 1～5 分钟对应的整数秒数。
+    输出：刷新间隔已保存的新配置。
+    用途：下拉选择后记住实际轮询周期。
+    边界：布尔值、非整数和不在选项内的值拒绝写入；缺省键会补齐。
+    """
+    if type(seconds) is not int or seconds not in REFRESH_CHOICES:
+        raise ValueError("刷新间隔只能是 1、2、3、4、5 分钟")
+    _save_setting(config.config_path, "refresh_seconds", str(seconds))
+    return replace(config, refresh_seconds=seconds)
+
+
+def _save_setting(path: Path, key: str, value: str) -> None:
+    """输入：配置路径、受控的顶层键和标量文本。
+    输出：无，写回 UTF-8 配置。
+    用途：保留其它设置与行尾注释，只更新所选项。
+    边界：键缺省时追加；调用方须串行化并校验值。
+    """
+    pattern = re.compile(rf"(?m)^{re.escape(key)}:[^\S\r\n]*[^#\r\n]*(?P<comment>#[^\r\n]*)?$")
+    def replacement(match: re.Match) -> str:
+        """输入：配置项匹配；输出：保留注释的新行；边界：无注释时不追加空格。"""
+        comment = match.group("comment")
+        return f"{key}: {value}" + (f"  {comment}" if comment else "")
+    def transform(text: str) -> str:
+        """输入：锁内最新配置；输出：目标键的新文本；边界：先拒绝重复键，缺省项补齐。"""
+        data = yaml.load(text, Loader=_UniqueKeyLoader)
+        if not isinstance(data, dict):
+            raise ValueError("配置文件必须为映射")
+        updated, count = pattern.subn(replacement, text, count=1)
+        if count == 0:
+            node = yaml.compose(text)
+            if key in data:
+                for key_node, value_node in node.value:
+                    if key_node.value == key and value_node.start_mark.index >= key_node.end_mark.index:
+                        return text[:value_node.start_mark.index] + value + text[value_node.end_mark.index:]
+            if node.flow_style or key in data:
+                data[key] = yaml.safe_load(value)
+                return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+            updated = text.rstrip("\n") + f"\n{key}: {value}\n"
+        return updated
+    atomic_update_text(path, transform)
 
 
 def refresh_label(seconds: int) -> str:

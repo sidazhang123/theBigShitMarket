@@ -16,11 +16,11 @@ _LIMITS = -np.asarray(THRESHOLDS, dtype=np.float64)
 def _finite_pct(pct: np.ndarray) -> np.ndarray:
     """输入：涨幅百分点数组。
     输出：只含有限值的一维数组。
-    用途：计数前丢掉停牌和空值。
-    边界：输入不是数组时会先转成 float64。不修改原数组。
+    用途：计数前丢掉停牌和空值，并消除价格相除带来的浮点尾差。
+    边界：百分点保留 10 位小数；输入不是数组时先转成 float64，不修改原数组。
     """
     values = np.asarray(pct, dtype=np.float64).ravel()
-    return values[np.isfinite(values)]
+    return np.round(values[np.isfinite(values)], decimals=10)
 
 
 def summarize_pct(pct: np.ndarray) -> tuple[list[int], int]:

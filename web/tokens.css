@@ -5,14 +5,14 @@
 
 :root {
   /* ---- 几何 ---- */
-  --panel-w: 880px;
-  --panel-h: 640px;
-  --panel-r: 26px;
-  --panel-pad: 40px;
+  --panel-w: 816px;
+  --panel-h: 530px;
+  --panel-r: 0px;
+  --panel-pad: 8px;
 
   --chart-w: 800px;
   --chart-h: 430px;
-  --chart-top: 148px;      /* chart 在面板内的 y */
+  --chart-top: 90px;       /* chart 在面板内的 y */
   --axis-x: 400px;         /* 中轴（chart 局部坐标） */
 
   --row-h: 34px;           /* 柱高（11 根紧贴，无间隙） */
@@ -38,11 +38,9 @@
   --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
 
   --fs-panel-title: 20px;
-  --fs-overline: 9.5px;
   --fs-meta: 10.5px;
   --fs-label: 11px;
   --fs-value: 12px;
-  --fs-footer: 9.5px;
   --fs-chip: 9px;
   --fs-chip-hot: 15px;
 

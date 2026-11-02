@@ -1,11 +1,12 @@
 /* 计量器组件。几何和色板来自 tokens.css，不在这里另写一套颜色。 */
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
-  width: 880px;
-  height: 640px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #0E0C09;
 }
@@ -13,12 +14,15 @@ html, body {
 body[data-theme="light"] { background: #FAF4E8; }
 
 .meter {
-  position: relative;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--meter-scale, 1));
+  transform-origin: center center;
   width: var(--panel-w);
   height: var(--panel-h);
   border-radius: var(--panel-r);
   overflow: hidden;
-  border: 1px solid var(--panel-line);
   background: linear-gradient(180deg, var(--panel-bg-1), var(--panel-bg-2));
   box-shadow: 0 28px 70px -14px rgba(38, 28, 10, .34), 0 6px 20px rgba(38, 28, 10, .10);
   font-family: var(--font-cn);
@@ -26,10 +30,8 @@ body[data-theme="light"] { background: #FAF4E8; }
 }
 
 .meter.is-stale .meter__hex,
-.meter.is-stale .meter__header,
 .meter.is-stale .meter__colhead,
-.meter.is-stale .meter__chart,
-.meter.is-stale .meter__footer { opacity: .4; }
+.meter.is-stale .meter__chart { opacity: .4; }
 .meter.is-stale .meter__live { color: var(--txt-3); }
 .meter.is-stale .js-livedot-core { fill: var(--txt-3); }
 .meter.is-stale .js-livedot-halo { fill: var(--txt-3); }
@@ -38,25 +40,20 @@ body[data-theme="light"] { background: #FAF4E8; }
 
 .meter__header {
   position: absolute;
-  left: 40px;
-  top: 40px;
+  z-index: 25;
+  left: var(--panel-pad);
+  top: 4px;
   width: 800px;
-  height: 64px;
+  height: 46px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
 }
 
-.meter__overline {
-  font: 500 var(--fs-overline)/14px var(--font-mono);
-  letter-spacing: 1.5px;
-  color: var(--txt-3);
-}
-
-.meter__titleRow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.meter__titleRow { display: flex; align-items: center; gap: 10px; }
 .meter__title { font: 600 var(--fs-panel-title)/26px var(--font-cn); color: var(--txt-1); }
 .meter__meta { font: 400 var(--fs-meta)/16px var(--font-cn); color: var(--txt-2); margin-top: 4px; }
-.meter__right { display: flex; align-items: center; gap: 8px; height: 22px; }
+.meter__right { display: flex; align-items: center; gap: 8px; height: 22px; margin-top: 2px; }
 .meter__live { font: 500 9px/14px var(--font-mono); letter-spacing: 1.6px; color: var(--d06); }
 .meter__clock { font: 500 13px/18px var(--font-mono); color: var(--txt-1); opacity: .86; }
 
@@ -81,11 +78,44 @@ button.meter__pill {
 }
 
 button.meter__pill:hover { color: var(--txt-1); }
+button.meter__pill:disabled { cursor: wait; opacity: .6; }
+
+select.meter__pill {
+  min-width: 92px;
+  cursor: pointer;
+  color-scheme: dark;
+}
+[data-theme="light"] select.meter__pill { color-scheme: light; }
+select.meter__pill:disabled { cursor: wait; opacity: .6; }
+select.meter__pill:focus-visible { outline: 2px solid var(--contour); outline-offset: 2px; }
+
+.meter__settingsError {
+  position: absolute;
+  top: 34px;
+  z-index: 26;
+  right: var(--panel-pad);
+  max-width: 400px;
+  color: var(--v16);
+  font: 400 10px/16px var(--font-cn);
+}
+
+.meter__baseline {
+  position: absolute;
+  left: var(--panel-pad);
+  top: 50px;
+  max-width: 800px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  z-index: 25;
+  color: var(--v12);
+  font: 400 9.5px/14px var(--font-cn);
+}
 
 .meter__colhead {
   position: absolute;
-  left: 40px;
-  top: 118px;
+  left: var(--panel-pad);
+  top: 64px;
   width: 800px;
   height: 18px;
   display: flex;
@@ -99,7 +129,7 @@ button.meter__pill:hover { color: var(--txt-1); }
 .meter__colhead span:first-child { width: 92px; text-align: right; }
 .meter__colhead span:last-child { width: 98px; text-align: right; }
 
-.meter__chart { position: absolute; left: 40px; top: var(--chart-top); width: 800px; height: 430px; }
+.meter__chart { position: absolute; left: var(--panel-pad); top: var(--chart-top); width: 800px; height: 430px; }
 
 .meter__poop {
   position: absolute;
@@ -254,7 +284,7 @@ button.meter__pill:hover { color: var(--txt-1); }
 .meter__alert {
   display: none;
   position: absolute;
-  top: 16px;
+  top: 86px;
   right: 16px;
   z-index: 30;
   max-width: 280px;
@@ -276,7 +306,10 @@ button.meter__pill:hover { color: var(--txt-1); }
 
 .meter__veil {
   position: absolute;
-  inset: 0;
+  top: var(--chart-top);
+  bottom: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
   display: none;
   flex-direction: column;
@@ -288,6 +321,10 @@ button.meter__pill:hover { color: var(--txt-1); }
 }
 
 .meter.is-waiting .meter__veil { display: flex; }
+.meter:not(.is-loading) .meter__spin { display: none; }
+.meter.is-empty .meter__live { color: var(--txt-3); }
+.meter.is-empty .js-livedot-core,
+.meter.is-empty .js-livedot-halo { fill: var(--txt-3); }
 
 .meter__spin {
   width: 36px;
@@ -305,19 +342,6 @@ button.meter__pill:hover { color: var(--txt-1); }
 
 @keyframes meter-spin {
   to { transform: rotate(360deg); }
-}
-
-.meter__footer {
-  position: absolute;
-  left: 40px;
-  top: 592px;
-  width: 800px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font: 400 var(--fs-footer)/14px var(--font-cn);
-  color: var(--txt-3);
 }
 
 @media (prefers-reduced-motion: reduce) {

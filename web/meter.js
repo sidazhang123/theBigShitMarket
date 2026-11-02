@@ -1,5 +1,5 @@
 /* 急跌梯度计量器。
-   几何、闭环和过冲沿用施工包。家数、比例尺和主题由页面状态推进。
+   设计画布按视口等比居中缩放，家数、比例尺、刷新间隔和主题由页面状态推进。
    半宽像素 = round(家数 * 内缩 * halfWidth / 基底6%家数)，与 app/scale.py 一致。
    灰柱内缩为 1，虚线内缩用状态里的 inset，只乘这一次。 */
 
@@ -13,27 +13,34 @@ const OVERSHOOT_PX = 6;
 const THRESHOLDS = [16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6];
 
 function halfPx(count, baseShallow, halfWidth, inset) {
+  /* 输入：家数、浅档基底、半宽与内缩；输出：整数半宽；用途：统一比例尺；边界：无基底或非正数返回零。 */
   if (baseShallow <= 0 || count <= 0 || halfWidth <= 0 || inset <= 0) return 0;
   return Math.round(count * inset * halfWidth / baseShallow);
 }
 
 function buildContour(halves, ytop, ybot, cx = CX, k = 0.8) {
+  /* 输入：11 档半宽、上下盖坐标、中轴和曲线张力；输出：闭合 SVG 路径。
+     用途：连接每档精确宽度，控制点限制在本段范围，避免虚构家数过冲。
+     边界：半宽必须覆盖11档；上下盖始终位于首末档中心之外。 */
+  ytop = Math.min(ytop, ROWS_Y[0] - 1);
+  ybot = Math.max(ybot, ROWS_Y[10] + 1);
   const p = [[cx - halves[0] * 0.55, ytop], [cx + halves[0] * 0.55, ytop]];
   halves.forEach((h, i) => p.push([cx + h, ROWS_Y[i]]));
   p.push([cx + halves[10] * 0.55, ybot], [cx - halves[10] * 0.55, ybot]);
   for (let i = 10; i >= 0; i--) p.push([cx - halves[i], ROWS_Y[i]]);
   const n = p.length;
   const f = (v) => v.toFixed(1);
+  const between = (value, a, b) => Math.max(Math.min(a, b), Math.min(Math.max(a, b), value));
   let d = `M${f(p[0][0])} ${f(p[0][1])}`;
   for (let i = 0; i < n; i++) {
     const p0 = p[(i - 1 + n) % n];
     const p1 = p[i];
     const p2 = p[(i + 1) % n];
     const p3 = p[(i + 2) % n];
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6 * k;
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6 * k;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6 * k;
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6 * k;
+    const c1x = between(p1[0] + (p2[0] - p0[0]) / 6 * k, p1[0], p2[0]);
+    const c1y = between(p1[1] + (p2[1] - p0[1]) / 6 * k, p1[1], p2[1]);
+    const c2x = between(p2[0] - (p3[0] - p1[0]) / 6 * k, p1[0], p2[0]);
+    const c2y = between(p2[1] - (p3[1] - p1[1]) / 6 * k, p1[1], p2[1]);
     d += `C${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(p2[0])} ${f(p2[1])}`;
   }
   return d + "Z";
@@ -72,6 +79,8 @@ function jumpWidth(from, to, ms) {
 }
 
 function createMeter(root) {
+  /* 输入：计量器根元素；输出：状态与主题更新接口。
+     用途：建立图表和设置交互；边界：Python桥未连接时设置保存会显示错误。 */
   const round = (n) => Math.round(n);
   let seen = -1;
   let anim = 0;
@@ -80,14 +89,23 @@ function createMeter(root) {
   let halfWidth = 300;
   let inset = 0.9;
   let geometrySig = "";
+  let refreshSeconds = 120;
+  let savingRefresh = false;
+  let confirmedTheme = root.dataset.theme || "dark";
+  let savingTheme = false;
+  let refreshRequest = 0;
+  let themeRequest = 0;
+  let retryPending = false;
+  let refreshing = false;
+  let retryVisible = true;
+  const settingErrors = new Map();
 
   root.innerHTML = `
-    <svg class="meter__hex" viewBox="0 0 880 640" fill="none" aria-hidden="true">
-      <path d="${hexTexture(880, 640, 78)}" stroke="var(--txt-3)" stroke-opacity=".16" stroke-width="1"/>
+    <svg class="meter__hex" viewBox="0 0 816 530" fill="none" aria-hidden="true">
+      <path d="${hexTexture(816, 530, 78)}" stroke="var(--txt-3)" stroke-opacity=".16" stroke-width="1"/>
     </svg>
     <div class="meter__header">
       <div>
-        <div class="meter__overline">A-SHARE · CRASH DENSITY</div>
         <div class="meter__titleRow">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M10 2.2L16.8 6.1V13.9L10 17.8L3.2 13.9V6.1L10 2.2Z" stroke="var(--contour)" stroke-width="1.4" stroke-linejoin="round"/>
@@ -104,8 +122,11 @@ function createMeter(root) {
         </svg>
         <div class="meter__live">LIVE</div>
         <div class="meter__clock js-clock">--:--:--</div>
-        <div class="meter__pill js-refresh">2 min 刷新</div>
+        <select class="meter__pill js-refresh" aria-label="刷新间隔">
+          ${[1, 2, 3, 4, 5].map((minutes) => `<option value="${minutes * 60}" ${minutes === 2 ? "selected" : ""}>${minutes} min 刷新</option>`).join("")}
+        </select>
         <button type="button" class="meter__pill js-theme">浅色</button>
+        <button type="button" class="meter__pill js-retry">重试</button>
       </div>
     </div>
     <div class="meter__colhead"><span>跌幅阈值</span><span>家数</span></div>
@@ -119,10 +140,8 @@ function createMeter(root) {
       <div class="js-readouts"></div>
       <div class="js-chips"></div>
     </div>
-    <div class="meter__footer">
-      <span>基底 · quant.duckdb 15min · 单档历史最大值</span>
-      <span>填充 · 标准行情 · 每 2 min 轮询</span>
-    </div>
+    <div class="meter__baseline js-baseline" role="status" hidden></div>
+    <div class="meter__settingsError js-settingsError" role="status" hidden></div>
     <div class="meter__alert js-alert" role="alert"></div>
     <div class="meter__veil" role="status">
       <div class="meter__spin" aria-hidden="true"></div>
@@ -133,7 +152,11 @@ function createMeter(root) {
   const meta = root.querySelector(".js-meta");
   const clock = root.querySelector(".js-clock");
   const refreshPill = root.querySelector(".js-refresh");
+  const settingsError = root.querySelector(".js-settingsError");
   const themeBtn = root.querySelector(".js-theme");
+  const retryBtn = root.querySelector(".js-retry");
+  const baselineEl = root.querySelector(".js-baseline");
+  const veilText = root.querySelector(".meter__veilText");
   const rowsEl = root.querySelector(".js-rows");
   const readoutsEl = root.querySelector(".js-readouts");
   const contourSvg = root.querySelector(".js-contours");
@@ -141,6 +164,58 @@ function createMeter(root) {
   const chartEl = root.querySelector(".meter__chart");
   const alertEl = root.querySelector(".js-alert");
   const ns = "http://www.w3.org/2000/svg";
+
+  function settingError(key, message = "") {
+    /* 输入：设置类别和可空错误文案；输出：无；用途：独立维护并显示错误；边界：单项成功不清除其它错误。 */
+    if (message) settingErrors.set(key, message);
+    else settingErrors.delete(key);
+    settingsError.textContent = [...settingErrors.values()].join("；");
+    settingsError.hidden = settingErrors.size === 0;
+  }
+
+  function setRefresh(seconds) {
+    /* 输入：后端确认的正整数秒数；输出：无。
+       用途：同步下拉选择；边界：非预设间隔显示当前配置值，无效值忽略。 */
+    const value = Number(seconds);
+    if (!Number.isInteger(value) || value <= 0) return;
+    const label = value % 60 === 0 ? `${value / 60} min` : `${value} 秒`;
+    refreshPill.querySelectorAll("option[data-custom]").forEach((option) => option.remove());
+    if (![60, 120, 180, 240, 300].includes(value)) {
+      const option = new Option(`${label} 刷新`, String(value));
+      option.dataset.custom = "true";
+      refreshPill.add(option);
+    }
+    refreshPill.value = String(value);
+  }
+
+  async function changeRefresh() {
+    /* 输入：无，读取下拉值；输出：保存完成后的 Promise。
+       用途：调用Python桥调整实际轮询并持久化；边界：失败回退到已确认值，保存时禁止重复提交。 */
+    if (savingRefresh) return;
+    const requested = Number(refreshPill.value);
+    const token = ++refreshRequest;
+    savingRefresh = true;
+    refreshPill.disabled = true;
+    settingError("refresh");
+    try {
+      if (!window.pywebview || !window.pywebview.api) throw new Error("桌面连接尚未就绪");
+      const saved = await window.pywebview.api.set_refresh_seconds(requested);
+      if (token !== refreshRequest) return;
+      if (!Number.isInteger(saved) || saved <= 0) throw new Error("保存结果无效");
+      refreshSeconds = saved;
+      setRefresh(refreshSeconds);
+    } catch (error) {
+      if (token !== refreshRequest) return;
+      setRefresh(refreshSeconds);
+      settingError("refresh", `刷新间隔未保存：${error.message || error}`);
+    } finally {
+      if (token === refreshRequest) {
+        savingRefresh = false;
+        refreshPill.disabled = false;
+      }
+    }
+  }
+  refreshPill.addEventListener("change", changeRefresh);
 
   const rowRefs = THRESHOLDS.map((th, i) => {
     const row = document.createElement("div");
@@ -170,19 +245,67 @@ function createMeter(root) {
   });
 
   function setTheme(theme) {
+    /* 输入：主题名；输出：无；用途：绘制主题；边界：非light值按dark显示，不隐式保存。 */
     const next = theme === "light" ? "light" : "dark";
     root.dataset.theme = next;
     document.body.dataset.theme = next;
     themeBtn.textContent = next === "dark" ? "浅色" : "深色";
   }
 
-  themeBtn.addEventListener("click", () => {
+  async function changeTheme() {
+    /* 输入：无；输出：保存完成的Promise；用途：切换主题并确认保存；边界：禁重入，失败恢复后端最新确认主题。 */
+    if (savingTheme) return;
     const next = root.dataset.theme === "dark" ? "light" : "dark";
+    const token = ++themeRequest;
+    savingTheme = true;
+    themeBtn.disabled = true;
+    settingError("theme");
     setTheme(next);
-    if (window.pywebview && window.pywebview.api) {
-      window.pywebview.api.set_theme(next);
+    try {
+      if (!window.pywebview || !window.pywebview.api) throw new Error("桌面连接尚未就绪");
+      const saved = await window.pywebview.api.set_theme(next);
+      if (token !== themeRequest) return;
+      if (!["dark", "light"].includes(saved)) throw new Error("保存结果无效");
+      confirmedTheme = saved;
+      setTheme(confirmedTheme);
+    } catch (error) {
+      if (token !== themeRequest) return;
+      setTheme(confirmedTheme);
+      settingError("theme", `主题未保存：${error.message || error}`);
+    } finally {
+      if (token === themeRequest) {
+        savingTheme = false;
+        themeBtn.disabled = false;
+      }
     }
-  });
+  }
+  themeBtn.addEventListener("click", changeTheme);
+
+  function paintRetry() {
+    /* 输入：无；输出：无；用途：统一重试按钮显隐及忙碌状态；边界：正在取数时禁止再次触发。 */
+    retryBtn.hidden = !retryVisible;
+    retryBtn.disabled = retryPending || refreshing;
+    retryBtn.textContent = refreshing ? "获取中" : "重试";
+  }
+
+  async function retryQuote() {
+    /* 输入：无；输出：请求完成的Promise；用途：手动唤醒行情轮询；边界：失败保留重试能力，不伪造行情状态。 */
+    if (retryPending || refreshing) return;
+    retryPending = true;
+    paintRetry();
+    settingError("retry");
+    try {
+      if (!window.pywebview || !window.pywebview.api) throw new Error("桌面连接尚未就绪");
+      const accepted = await window.pywebview.api.refresh_now();
+      if (typeof accepted !== "boolean") throw new Error("重试结果无效");
+    } catch (error) {
+      settingError("retry", `重试未启动：${error.message || error}`);
+    } finally {
+      retryPending = false;
+      paintRetry();
+    }
+  }
+  retryBtn.addEventListener("click", retryQuote);
 
   function paintBar(el, count, scaleInset) {
     const half = halfPx(count, baseShallow, halfWidth, scaleInset);
@@ -202,10 +325,11 @@ function createMeter(root) {
   }
 
   function animateLive(nextCounts) {
+    /* 输入：11档目标家数；输出：无；用途：平滑更新柱和数字；边界：新状态使令牌失效，不再允许旧动画覆写。 */
     const token = ++anim;
     const fromW = rowRefs.map((row) => parseFloat(row.fill.style.width) || 0);
     const toW = nextCounts.map((count) => halfPx(count, baseShallow, halfWidth, 1) * 2);
-    const fromV = rowRefs.map((row) => row.live);
+    const fromV = rowRefs.map((row) => Number(row.value.textContent.replace(/,/g, "")) || 0);
     const t0 = performance.now();
     function frame(now) {
       if (token !== anim) return;
@@ -228,11 +352,13 @@ function createMeter(root) {
   }
 
   function layoutCrashes(items) {
+    /* 输入：历史轮廓列表；输出：按浅档峰值降序的列表。
+       用途：安排层叠和标签顺序；边界：盖坐标不能跨越首末档中心。 */
     const ranked = items.map((item, index) => ({item, index}));
     ranked.sort((a, b) => (b.item.peak - a.item.peak) || (a.index - b.index));
     ranked.forEach((entry, rank) => {
-      entry.item.ytop = Math.min(46, 30 + rank * 2);
-      entry.item.ybot = Math.max(384, 400 - rank * 2);
+      entry.item.ytop = Math.min(ROWS_Y[0] - 1, 30 + rank * 2);
+      entry.item.ybot = Math.max(ROWS_Y[10] + 1, 400 - rank * 2);
       entry.item.rank = rank;
     });
     return ranked.map((entry) => entry.item);
@@ -329,28 +455,50 @@ function createMeter(root) {
   }
 
   function apply(state) {
+    /* 输入：后端页面状态；输出：无。
+       用途：更新家数、轮廓和设置；边界：忽略重复或落后序号，保留保存中的新选择并取消旧动画。 */
+    if (!state || typeof state !== "object") return;
     if (state && typeof state.seq === "number") {
-      if (state.seq < seen) return;
+      if (state.seq <= seen) return;
       seen = state.seq;
     }
-    setTheme(state.theme || "dark");
-    if (state.refresh_label) refreshPill.textContent = state.refresh_label;
+    ++anim;
+    settingError("bridge");
+    confirmedTheme = state.theme === "light" ? "light" : "dark";
+    if (!savingTheme) setTheme(confirmedTheme);
+    if (Number.isInteger(state.refresh_seconds) && state.refresh_seconds > 0) {
+      refreshSeconds = state.refresh_seconds;
+      if (!savingRefresh) setRefresh(refreshSeconds);
+    }
     halfWidth = Number(state.half_width) || 300;
     inset = Number(state.inset) || 0.9;
     const waiting = state.universe == null;
+    refreshing = Boolean(state.refreshing);
+    const failed = Boolean(state.stale) || Boolean(state.alert);
+    const empty = state.universe === 0;
     root.classList.toggle("is-waiting", waiting);
-    root.classList.toggle("is-stale", Boolean(state.stale) && !waiting);
+    root.classList.toggle("is-loading", waiting && (!failed || refreshing));
+    root.classList.toggle("is-empty", empty);
+    root.classList.toggle("is-stale", failed);
+    veilText.textContent = failed && !refreshing ? "行情中断，可在右上角重试" : "数据获取中";
+    retryVisible = waiting || failed || empty;
+    paintRetry();
     const alertText = String(state.alert || "");
     root.classList.toggle("is-alert", alertText.length > 0);
     alertEl.textContent = alertText;
     const bands = Array.isArray(state.bands) ? state.bands : [];
     const shallow = bands.find((band) => Number(band.th) === 6);
-    const nextBase = shallow ? Number(shallow.base) || 0 : 0;
+    const baselineReady = state.baseline_status === "ready" || (state.baseline_status == null && Number(shallow && shallow.base) > 0);
+    const nextBase = baselineReady && shallow ? Number(shallow.base) || 0 : 0;
+    baselineEl.hidden = baselineReady && nextBase > 0;
+    baselineEl.textContent = String(state.baseline_message || "历史基底不可用，暂仅显示家数");
+    baselineEl.title = baselineEl.textContent;
     const geo = [
       bands.map((band) => Number(band.th) + ":" + (Number(band.base) || 0)).join(","),
+      baselineReady,
       halfWidth,
       inset,
-      (state.crashes || []).map((crash) => (crash.id || "") + ":" + (crash.label || "") + ":" + (crash.worst || []).join(",")).join("|"),
+      (state.crashes || []).map((crash) => (crash.id || "") + ":" + (crash.label || "") + ":" + (crash.source || "") + ":" + (crash.worst || []).join(",")).join("|"),
     ].join("#");
     const geometryChanged = geo !== geometrySig;
     if (geometryChanged) {
@@ -358,7 +506,7 @@ function createMeter(root) {
       baseShallow = nextBase;
       const byBase = new Map(bands.map((band) => [Number(band.th), Number(band.base) || 0]));
       rowRefs.forEach((row) => paintBar(row.base, byBase.get(row.th) || 0, 1));
-      const nextCrashes = (state.crashes || []).map((crash, index) => {
+      const nextCrashes = (nextBase > 0 ? state.crashes || [] : []).map((crash, index) => {
         const worst = crash.worst || [];
         const peak = Number(worst[worst.length - 1]) || 0;
         return {
@@ -387,27 +535,52 @@ function createMeter(root) {
       );
     }
 
-    if (state.computing) {
+    if (empty) {
+      meta.textContent = "暂无有效成交";
+    } else if (state.computing) {
       meta.textContent = "正在计算基底";
     } else if (state.message) {
       meta.textContent = state.message;
     } else if (state.universe != null) {
-      meta.textContent = `全市场 ${Number(state.universe).toLocaleString("en-US")} 只　·　累计口径，深跌计入浅档`;
+      meta.textContent = `有效股票 ${Number(state.universe).toLocaleString("en-US")} 只　·　累计口径，深跌计入浅档`;
+    } else {
+      meta.textContent = failed ? "行情中断" : "等待行情";
     }
     clock.textContent = state.clock || "--:--:--";
   }
 
   setTheme(root.dataset.theme || "dark");
-  root.classList.add("is-waiting");
-  return {apply, setTheme};
+  root.classList.add("is-waiting", "is-loading");
+  return {apply, setTheme, showBridgeError(message) {
+    /* 输入：桥接错误文案；输出：无；用途：初始取状态失败时显示恢复入口；边界：保留已有行情。 */
+    settingError("bridge", message);
+    root.classList.remove("is-loading");
+    veilText.textContent = "桌面连接异常，可在右上角重试";
+    retryVisible = true;
+    paintRetry();
+  }};
+}
+
+function fitMeter() {
+  /* 输入：无，读取实际客户区与设计画布尺寸；输出：无。
+     用途：等比缩放所有文字、图形和交互元素并保持居中；边界：最小化时零尺寸不更新。 */
+  const root = document.getElementById("meter");
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  if (width <= 0 || height <= 0) return;
+  const scale = Math.min(width / root.offsetWidth, height / root.offsetHeight);
+  root.style.setProperty("--meter-scale", String(scale));
 }
 
 window.meter = createMeter(document.getElementById("meter"));
+new ResizeObserver(fitMeter).observe(document.documentElement);
+window.addEventListener("resize", fitMeter);
+fitMeter();
 
 window.addEventListener("pywebviewready", () => {
   window.pywebview.api.get_state().then((state) => {
     if (state) window.meter.apply(state);
-  });
+  }).catch((error) => window.meter.showBridgeError(`状态获取失败：${error.message || error}`));
 });
 
 function demoState(overflow) {
@@ -428,6 +601,10 @@ function demoState(overflow) {
     universe: 5349,
     message: "",
     refresh_label: "2 min 刷新",
+    refresh_seconds: 120,
+    baseline_status: "ready",
+    baseline_message: "",
+    refreshing: false,
     half_width: 300,
     inset: 0.9,
     bands,

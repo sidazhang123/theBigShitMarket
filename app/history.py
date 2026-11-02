@@ -1,7 +1,7 @@
 """历史基底和股灾轮廓。
 
 只读打开行情库，在 DuckDB 内按时间戳聚合，Python 只接收每段一行。
-一段里每个交易日都有合格 15 分钟，才把该段计入灰色基底；否则整段用日线收盘，并在日期牌标明日线。
+一段里每个交易日都有至少一个达到有效唯一股票覆盖阈值的15分钟时间点，才计入灰色基底；否则整段用日线收盘。
 缓存保存原始家数。0.9 内缩留到绘制时再乘。
 """
 
@@ -13,9 +13,10 @@ from typing import Any, Sequence
 
 import duckdb
 
-from app.baseline_cache import fingerprint
+from app.baseline_cache import ALGORITHM_VERSION, fingerprint
 from app.config import AppConfig, parse_window, stamp_now
 from app.count import THRESHOLDS
+from app.storage import atomic_write_text
 
 # 股票代码前缀与全市场股票集合对齐。库内代码带市场前缀。
 _UNIVERSE = """
@@ -44,6 +45,9 @@ def recompute_baselines(config: AppConfig) -> dict[str, Any]:
     边界：只读打开数据库。没有任何完整 15 分钟段时，各档基底为 0。日期段非法时抛出 ValueError。
     """
     windows = [_Window(item, *parse_window(item)) for item in config.crash_windows]
+    ranges = {(window.start, window.end) for window in windows}
+    if not windows or len(ranges) != len(windows):
+        raise ValueError("crash_windows 必须非空且不能包含重复日期范围")
     if not str(config.source_db).strip():
         raise ValueError("重算历史基底需要 source_db")
     con = duckdb.connect(config.source_db, read_only=True)
@@ -65,6 +69,7 @@ def recompute_baselines(config: AppConfig) -> dict[str, Any]:
                 bases[index] = value
     payload = {
         "fingerprint": fingerprint(config),
+        "algorithm_version": ALGORITHM_VERSION,
         "generated_at": stamp_now(),
         "formula_version": config.formula_version,
         "source_db": config.source_db,
@@ -73,17 +78,18 @@ def recompute_baselines(config: AppConfig) -> dict[str, Any]:
         "crashes": crashes,
     }
     config.cache_path.parent.mkdir(parents=True, exist_ok=True)
-    config.cache_path.write_text(
+    atomic_write_text(
+        config.cache_path,
         json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
     return payload
 
 
 class _Window:
-    """一段股灾日期。wid 使用配置原文，避免两条相同日期被收成一段。"""
+    """一段股灾日期。wid 使用配置原文，对应页面和缓存中的日期段标识。"""
 
     def __init__(self, wid: str, start: date, end: date) -> None:
+        """输入：日期段标识及首尾日期；输出：窗口对象；用途：生成 SQL；边界：日期已由配置校验。"""
         self.wid = wid
         self.start = start
         self.end = end
@@ -93,7 +99,7 @@ def _crash_from_row(window: _Window, row: tuple[Any, ...] | None) -> dict[str, A
     """输入：日期段，以及 SQL 的一行；没有行时视为整段无数据。
     输出：一段轮廓的字典，worst 是原始家数。
     用途：决定这段用 15 分钟还是日线，并生成 yy-mm 标签。
-    边界：交易日为 0，或合格 15 分钟没有覆盖每一个交易日时，来源是日线。
+    边界：交易日为0或任一天没有合格15分钟时间点时使用日线。
     """
     if row is None:
         trading_days = 0
@@ -147,8 +153,8 @@ def _label(peak: str | None, fallback: date, daily: bool) -> str:
 def _sql(windows: Sequence[_Window], min_codes: int) -> str:
     """输入：日期段和单根 15 分钟的最少有效股票数。
     输出：一条只返回每段一行的 DuckDB SQL。
-    用途：把日线各档最大、15 分钟各档最大和覆盖天数留在库内。
-    边界：min_codes 必须是整数。日期来自已解析的 date，不拼接用户原始字符串进日期字面量。
+    用途：在库内计算各档最大值和具有合格15分钟数据的交易日数。
+    边界：重复代码时间行取最高有效收盘后按唯一股票计数；日期来自已解析的 date，不拼接用户原文。
     """
     pad_rows = []
     daily_ranges = []
@@ -218,12 +224,13 @@ daily_hit AS (
   GROUP BY 1, 2
 ),
 bars AS (
-  SELECT code, datetime, CAST(datetime AS DATE) AS d, close
+  SELECT code, datetime, CAST(datetime AS DATE) AS d, max(close) AS close
   FROM klines_15
   WHERE close > 0 AND volume > 0 AND isfinite(close)
     AND {_UNIVERSE}
     AND {_SESSION}
     AND ({" OR ".join(minute_ranges)})
+  GROUP BY 1, 2, 3
 ),
 minute_ret AS (
   SELECT n.wid, b.datetime, b.close / p.close - 1 AS r
@@ -302,9 +309,9 @@ def _filters(expr: str, prefix: str) -> str:
     """输入：收益率表达式和列前缀。
     输出：11 个累计计数表达式。
     用途：同一行上按门槛生成家数，深档在前。
-    边界：比较是严格小于。
+    边界：收益率先保留 12 位小数，再严格小于门槛，与实时百分点的 10 位精度一致。
     """
     return ",\n".join(
-        f"count(*) FILTER (WHERE {expr} < -{th}/100.0) AS {prefix}{th:02d}"
+        f"count(*) FILTER (WHERE round({expr}, 12) < -{th}/100.0) AS {prefix}{th:02d}"
         for th in THRESHOLDS
     )
